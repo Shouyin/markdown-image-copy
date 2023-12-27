@@ -7,22 +7,36 @@ import base64
 
 import requests
 
+ERROR_IMG = ""
+
+global_name_i = 0
+
+#######################################################################
+# Utils
+#######################################################################
+
 def image_to_base64(image_path):
     encoded_string = ""
     with open(image_path, 'rb') as image_file:
         encoded_string = base64.b64encode(image_file.read())
     return encoded_string
 
-# ![Alt text](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA...)
-
-ERROR_IMG = ""
-
-global_name_i = 0
-
 def mkdir(dir_path): 
     if not os.path.isdir(dir_path): os.mkdir(dir_path)
 
-def new_rand_img_name(): return f"img{global_name_i}"
+def default_pic_dire(md_path):
+    pic_folder_name = os.path.basename(md_path).split(".")[0] + "_pics"
+    return pic_folder_name
+
+def default_processed_path(md_path):
+    dire = os.path.dirname(md_path)
+    filename = os.path.basename(md_path).split(".")[0] + "_processed" + ".md"
+    return os.path.join(dire, filename)
+
+def new_rand_img_name(): 
+    rand_i = global_name_i
+    global_name_i += 1
+    return f"img{rand_i}"
 
 def get_filename_from_url(url):
     parsed_url = urllib.parse.urlparse(url)
@@ -32,6 +46,10 @@ def get_filename_from_url(url):
         filename = new_rand_img_name()
     return filename
 
+
+#######################################################################
+# File operations
+#######################################################################
 
 def download_img(url, pic_dir, line_num=-1):
     img_path = os.path.join(pic_dir, get_filename_from_url(url))
@@ -84,7 +102,7 @@ def get_img(path, pic_dir, mv=False, line_num=-1):
 
 
 ########################################################################
-# image: img tag
+# Parsing and modifying img tag
 ########################################################################
 RE_IMG_TAG = re.compile(r"""<img(\s+[^>]*)src=["']([^"'>]+)["']([^>]*)>""")
 def replace_imgtag(
@@ -107,6 +125,10 @@ def replace_imgtag(
     return modified_line
 
 
+########################################################################
+# Parsing and modifying img in markdown syntax
+########################################################################
+
 RE_IMG_MDSYNTX = re.compile(r"!\[(.*)\]\((.*)\)")
 def replace_img_mdsyntax(
     match, pic_dir, pic_dir_in_md, mv=False, line_num=-1, orig_img_base_dire="",
@@ -119,7 +141,8 @@ def replace_img_mdsyntax(
     if b64mode:
         b64img = image_to_base64(replaced_img_path)
         _, file_extension = os.path.splitext(replaced_img_path)
-        replaced_img_path=f"data:image/{file_extension[1:]};base64,{str(b64img, encoding=('utf-8'))}"
+        replaced_img_path = \
+            f"data:image/{file_extension[1:]};base64,{str(b64img, encoding=('utf-8'))}"
     else:
         replaced_img_path = os.path.join(pic_dir_in_md, os.path.basename(replaced_img_path))
     
@@ -129,9 +152,12 @@ def replace_img_mdsyntax(
     else:
         modified_line = \
             f"""![{match.group(1)}]({replaced_img_path})"""
-            # modified_line = f"""<img{match.group(1)}src="data:image/{file_extension[1:]};base64,{str(b64img)[2:-1]})"{match.group(3)}>"""
     return modified_line
 
+
+########################################################################
+# Main
+########################################################################
 
 def process_line(
     line, regex, process_func, pic_dir, pic_dir_in_md, mv=False, line_num=-1,
@@ -157,16 +183,7 @@ def process_line(
     return processed_line
 
 
-def default_pic_dire(md_path):
-    pic_folder_name = os.path.basename(md_path).split(".")[0] + "_pics"
-    return pic_folder_name
-
-def default_processed_path(md_path):
-    dire = os.path.dirname(md_path)
-    filename = os.path.basename(md_path).split(".")[0] + "_processed" + ".md"
-    return os.path.join(dire, filename)
-
-def main(pic_dir, mv=False):
+def main():
     parser = argparse.ArgumentParser(description="Markdown-image-copy: gather all image files in the markdown doc.")
     parser.add_argument("path", help="The path of markdown file")
     parser.add_argument("-m", "--move", help="Move local images instead of copying.", action="store_true")
@@ -183,7 +200,6 @@ def main(pic_dir, mv=False):
     if not os.path.isabs(pic_dir):
         pic_dir_in_md = os.path.join(".", pic_dir)
         pic_dir = os.path.join(os.path.dirname(path), pic_dir)
-    
     processed_path = default_processed_path(path)
 
     mkdir(pic_dir)
@@ -191,14 +207,12 @@ def main(pic_dir, mv=False):
     line_num = 0
     with open(path) as md_fd:
         for line in md_fd:
-            
             line = process_line(
                 line, RE_IMG_TAG, replace_imgtag, 
                 pic_dir, pic_dir_in_md, mv=args.move, line_num=line_num,
                 orig_img_base_dire=os.path.dirname(path),
                 b64mode=args.base64
             )
-
             line = process_line(
                 line, RE_IMG_MDSYNTX, replace_img_mdsyntax, 
                 pic_dir, pic_dir_in_md, mv=args.move, line_num=line_num,
@@ -219,7 +233,6 @@ def main(pic_dir, mv=False):
     else:
         print(f"Saved to {processed_path}")
 
+
 if __name__ == "__main__":
-    PATH = "../Making games.md"
-    PIC_DIR = "./pics"
-    main(PATH, PIC_DIR)
+    main()
