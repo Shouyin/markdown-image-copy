@@ -69,9 +69,11 @@ def cp_img(path, pic_dir, mv, line_num=-1):
 
 def get_img(path, pic_dir, mv=False, line_num=-1):
     # Check if the string is a valid URL
+    if path[:2] == "//":
+        path = "https:" + path
     parsed_url = urllib.parse.urlparse(path)
     if parsed_url.scheme and parsed_url.netloc:
-        return download_img(parsed_url, pic_dir, line_num=line_num)
+        return download_img(path, pic_dir, line_num=line_num)
 
     # Check if the string is a local directory
     if os.path.isfile(path):
@@ -104,12 +106,31 @@ def replace_imgtag(
         # modified_line = f"""<img{match.group(1)}src="data:image/{file_extension[1:]};base64,{str(b64img)[2:-1]})"{match.group(3)}>"""
     return modified_line
 
-RE_IMG_MDSYNTX = re.compile(r'!\[.*\](\(.*\.[a-z]*\))')
+
+RE_IMG_MDSYNTX = re.compile(r"!\[(.*)\]\((.*)\)")
 def replace_img_mdsyntax(
     match, pic_dir, pic_dir_in_md, mv=False, line_num=-1, orig_img_base_dire="",
     b64mode=False
 ):
-    pass
+    orig_img_path = match.group(2)
+    if orig_img_base_dire != "" and (not os.path.isabs(orig_img_path)):
+        orig_img_path = os.path.join(orig_img_base_dire, orig_img_path)
+    replaced_img_path = get_img(orig_img_path, pic_dir, mv=mv, line_num=line_num)
+    if b64mode:
+        b64img = image_to_base64(replaced_img_path)
+        _, file_extension = os.path.splitext(replaced_img_path)
+        replaced_img_path=f"data:image/{file_extension[1:]};base64,{str(b64img, encoding=('utf-8'))}"
+    else:
+        replaced_img_path = os.path.join(pic_dir_in_md, os.path.basename(replaced_img_path))
+    
+    modified_line = ""
+    if b64mode:
+        modified_line = f"""<img alt="{match.group(1)}" src="{replaced_img_path}" />"""
+    else:
+        modified_line = \
+            f"""![{match.group(1)}]({replaced_img_path})"""
+            # modified_line = f"""<img{match.group(1)}src="data:image/{file_extension[1:]};base64,{str(b64img)[2:-1]})"{match.group(3)}>"""
+    return modified_line
 
 
 def process_line(
@@ -173,6 +194,13 @@ def main(pic_dir, mv=False):
             
             line = process_line(
                 line, RE_IMG_TAG, replace_imgtag, 
+                pic_dir, pic_dir_in_md, mv=args.move, line_num=line_num,
+                orig_img_base_dire=os.path.dirname(path),
+                b64mode=args.base64
+            )
+
+            line = process_line(
+                line, RE_IMG_MDSYNTX, replace_img_mdsyntax, 
                 pic_dir, pic_dir_in_md, mv=args.move, line_num=line_num,
                 orig_img_base_dire=os.path.dirname(path),
                 b64mode=args.base64
