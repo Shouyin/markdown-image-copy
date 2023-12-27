@@ -2,16 +2,25 @@ import re
 import os
 import urllib.parse
 import shutil
+import argparse
+import base64
+
 import requests
 
-SUCCESS_IMG = 0
+def image_to_base64(image_path):
+    encoded_string = ""
+    with open(image_path, 'rb') as image_file:
+        encoded_string = base64.b64encode(image_file.read())
+    return encoded_string
+
+# ![Alt text](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA...)
+
 ERROR_IMG = ""
 
 global_name_i = 0
 
-def mkdir(dir_path):
-    if not os.path.isdir(dir_path):
-        os.mkdir(dir_path)
+def mkdir(dir_path): 
+    if not os.path.isdir(dir_path): os.mkdir(dir_path)
 
 def new_rand_img_name(): return f"img{global_name_i}"
 
@@ -37,7 +46,7 @@ def download_img(url, pic_dir, line_num=-1):
             for chunk in response.iter_content(chunk_size=8192):
                 file.write(chunk)
 
-        print(f"File downloaded successfully: {img_path}")
+        print(f"INFO: line {line_num}, File downloaded successfully: {img_path}")
 
     except requests.exceptions.HTTPError as e:
         print(f"WARNING: HTTP Error: {e}")
@@ -76,44 +85,86 @@ def get_img(path, pic_dir, mv=False, line_num=-1):
 # image: img tag
 ########################################################################
 RE_IMG_TAG = re.compile(r"""<img(\s+[^>]*)src=["']([^"'>]+)["']([^>]*)>""")
-def replace_imgtag(match, pic_dir, mv=False, line_num=-1, orig_img_base_dire=""):
+def replace_imgtag(
+    match, pic_dir, pic_dir_in_md, mv=False, line_num=-1, orig_img_base_dire="",
+    b64mode=False
+):
     orig_img_path = match.group(2)
     if orig_img_base_dire != "" and (not os.path.isabs(orig_img_path)):
         orig_img_path = os.path.join(orig_img_base_dire, orig_img_path)
     replaced_img_path = get_img(orig_img_path, pic_dir, mv=mv, line_num=line_num)
+    if b64mode:
+        b64img = image_to_base64(replaced_img_path)
+        _, file_extension = os.path.splitext(replaced_img_path)
+        replaced_img_path=f"data:image/{file_extension[1:]};base64,{str(b64img, encoding=('utf-8'))}"
+    else:
+        replaced_img_path = os.path.join(pic_dir_in_md, os.path.basename(replaced_img_path))
     modified_line = \
         f"""<img{match.group(1)}src="{replaced_img_path}"{match.group(3)}>"""
+        # modified_line = f"""<img{match.group(1)}src="data:image/{file_extension[1:]};base64,{str(b64img)[2:-1]})"{match.group(3)}>"""
     return modified_line
+
+RE_IMG_MDSYNTX = re.compile(r'!\[.*\](\(.*\.[a-z]*\))')
+def replace_img_mdsyntax(
+    match, pic_dir, pic_dir_in_md, mv=False, line_num=-1, orig_img_base_dire="",
+    b64mode=False
+):
+    pass
 
 
 def process_line(
-    line, regex, process_func, pic_dir, mv=False, line_num=-1,
-    orig_img_base_dire=""
+    line, regex, process_func, pic_dir, pic_dir_in_md, mv=False, line_num=-1,
+    orig_img_base_dire="", b64mode=False
 ):
     start_index = 0
     processed_line = ""
     for match in regex.finditer(line):
-        # The start and end indices of the match
+        if processed_line and b64mode:
+            processed_line += "\n"
+        # matched a image in md
         match_start, match_end = match.span()
-
-        # Add the part of the line before the match
         processed_line += line[start_index:match_start]
 
-        # Replace some text within the match
-        modified_match = process_func(match, pic_dir, 
+        # replace the image path
+        modified_match = process_func(match, pic_dir, pic_dir_in_md,
                                       mv=mv, line_num=line_num,
-                                      orig_img_base_dire=orig_img_base_dire)
+                                      orig_img_base_dire=orig_img_base_dire,
+                                      b64mode=b64mode)
         processed_line += modified_match
-
-        # Update the start index
         start_index = match_end
-
-    # Add the remainder of the line
     processed_line += line[start_index:]
     return processed_line
 
 
-def main(path, pic_dir, mv=False):
+def default_pic_dire(md_path):
+    pic_folder_name = os.path.basename(md_path).split(".")[0] + "_pics"
+    return pic_folder_name
+
+def default_processed_path(md_path):
+    dire = os.path.dirname(md_path)
+    filename = os.path.basename(md_path).split(".")[0] + "_processed" + ".md"
+    return os.path.join(dire, filename)
+
+def main(pic_dir, mv=False):
+    parser = argparse.ArgumentParser(description="Markdown-image-copy: gather all image files in the markdown doc.")
+    parser.add_argument("path", help="The path of markdown file")
+    parser.add_argument("-m", "--move", help="Move local images instead of copying.", action="store_true")
+    parser.add_argument("-d", "--dst", help="Destination directory to gather images to.", default="")
+    parser.add_argument("-b", "--base64", help="Convert all images to base64, so that no need to save them to a dedicated directory", action="store_true")
+    parser.add_argument("-x", "--nobackup", help="Modify the original markdown file, no backup is created.", action="store_true")
+    args = parser.parse_args()
+    path = args.path
+    if not os.path.exists(path):
+        print(f"ERROR: {path} does not exist.")
+        exit(1)
+    pic_dir = args.dst if args.dst else default_pic_dire(path)
+    pic_dir_in_md = pic_dir
+    if not os.path.isabs(pic_dir):
+        pic_dir_in_md = os.path.join(".", pic_dir)
+        pic_dir = os.path.join(os.path.dirname(path), pic_dir)
+    
+    processed_path = default_processed_path(path)
+
     mkdir(pic_dir)
     processed = []
     line_num = 0
@@ -121,25 +172,26 @@ def main(path, pic_dir, mv=False):
         for line in md_fd:
             
             line = process_line(
-                line,
-                RE_IMG_TAG, replace_imgtag, 
-                pic_dir, mv=mv, line_num=line_num,
-                orig_img_base_dire=os.path.dirname(path)
+                line, RE_IMG_TAG, replace_imgtag, 
+                pic_dir, pic_dir_in_md, mv=args.move, line_num=line_num,
+                orig_img_base_dire=os.path.dirname(path),
+                b64mode=args.base64
             )
             
             processed.append(line)
             line_num += 1
 
-    with open("./processed.md", "w") as out_fd:
+    with open(processed_path, "w") as out_fd:
         out_fd.writelines(processed)
 
-if __name__ == "__main__":
-    # TODO args
-    # -m: move mode, default: copy mode
-    # -d: dst directory
-    # -b: base64 mode
-    # -x: no backup, defualt: move the original doc to a backup
+    if args.nobackup:
+        # backup md
+        shutil.move(processed_path, path)
+        print(f"Saved to {path}")
+    else:
+        print(f"Saved to {processed_path}")
 
-    PATH = "/Users/shouyin/Desktop/Projects/Making games.md"
+if __name__ == "__main__":
+    PATH = "../Making games.md"
     PIC_DIR = "./pics"
     main(PATH, PIC_DIR)
