@@ -93,7 +93,7 @@ def get_img(path, pic_dir, mv=False, line_num=-1):
     if parsed_url.scheme and parsed_url.netloc:
         return download_img(path, pic_dir, line_num=line_num)
 
-    # Check if the string is a local directory
+    # Check if the string is a local file
     if os.path.isfile(path):
         return cp_img(path, pic_dir, mv, line_num=line_num)
 
