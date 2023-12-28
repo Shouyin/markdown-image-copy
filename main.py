@@ -124,7 +124,6 @@ def replace_imgtag(
         replaced_img_path = os.path.join(pic_dir_in_md, os.path.basename(replaced_img_path))
     modified_line = \
         f"""<img{match.group(1)}src="{replaced_img_path}"{match.group(3)}>"""
-        # modified_line = f"""<img{match.group(1)}src="data:image/{file_extension[1:]};base64,{str(b64img)[2:-1]})"{match.group(3)}>"""
     return modified_line
 
 
@@ -141,6 +140,9 @@ def replace_img_mdsyntax(
     if orig_img_base_dire != "" and (not os.path.isabs(orig_img_path)):
         orig_img_path = os.path.join(orig_img_base_dire, orig_img_path)
     replaced_img_path = get_img(orig_img_path, pic_dir, mv=mv, line_num=line_num)
+    if replaced_img_path == ERROR_IMG:
+        print("ERROR: quitting..")
+        exit(1)
     if b64mode:
         b64img = image_to_base64(replaced_img_path)
         _, file_extension = os.path.splitext(replaced_img_path)
