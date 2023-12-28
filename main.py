@@ -67,10 +67,10 @@ def download_img(url, pic_dir, line_num=-1):
         print(f"INFO: line {line_num}, File downloaded successfully: {img_path}")
 
     except requests.exceptions.HTTPError as e:
-        print(f"WARNING: HTTP Error: {e}")
+        print(f"ERROR: HTTP Error: {e}")
         return ERROR_IMG
     except requests.exceptions.RequestException as e:
-        print(f"WARNING: Error downloading file: {e}")
+        print(f"ERROR: Error downloading file: {e}")
         return ERROR_IMG
     
     return img_path
@@ -97,7 +97,7 @@ def get_img(path, pic_dir, mv=False, line_num=-1):
     if os.path.isfile(path):
         return cp_img(path, pic_dir, mv, line_num=line_num)
 
-    print(f"WARNING: line {line_num}, {path} does not exist.")
+    print(f"ERROR: line {line_num}, {path} does not exist.")
     return ERROR_IMG
 
 
@@ -113,6 +113,9 @@ def replace_imgtag(
     if orig_img_base_dire != "" and (not os.path.isabs(orig_img_path)):
         orig_img_path = os.path.join(orig_img_base_dire, orig_img_path)
     replaced_img_path = get_img(orig_img_path, pic_dir, mv=mv, line_num=line_num)
+    if replaced_img_path == ERROR_IMG:
+        print("ERROR: quitting..")
+        exit(1)
     if b64mode:
         b64img = image_to_base64(replaced_img_path)
         _, file_extension = os.path.splitext(replaced_img_path)
